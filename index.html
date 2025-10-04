@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SportDeals | Ofertas fitness</title>
+  <meta name="description" content="Las mejores ofertas de deporte: calzado, ropa, suplementos y accesorios." />
+  <style>
+    :root{--bg:#0b0b0c;--card:#141416;--muted:#8a8f98;--text:#f5f6f8;--brand:#6ee7b7;--accent:#60a5fa}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
+    header{position:sticky;top:0;background:linear-gradient(0deg,transparent,rgba(10,10,12,.9) 40%);backdrop-filter: blur(8px);z-index:10}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    .toolbar{display:grid;grid-template-columns:1fr 160px 160px;gap:10px;align-items:center}
+    .brand{font-weight:800;font-size:22px;letter-spacing:.2px}
+    input,select{background:#0f1012;color:var(--text);border:1px solid #222;outline:none;border-radius:10px;padding:10px 12px}
+    main{padding:18px 0 60px}
+    .grid{display:grid;grid-template-columns:repeat(1,minmax(0,1fr));gap:14px}
+    @media(min-width:640px){.grid{grid-template-columns:repeat(2,1fr)}}
+    @media(min-width:960px){.grid{grid-template-columns:repeat(3,1fr)}}
+    .card{background:var(--card);border:1px solid #1f2125;border-radius:18px;overflow:hidden;display:flex;flex-direction:column}
+    .thumb{aspect-ratio:4/3;object-fit:cover;width:100%;background:#0f1012}
+    .content{padding:14px}
+    .title{font-weight:700;line-height:1.2;margin:4px 0 8px;font-size:15px}
+    .bullets{color:var(--muted);font-size:13px;line-height:1.45;margin:0 0 10px}
+    .price{display:flex;gap:8px;align-items:baseline;margin:8px 0 12px}
+    .before{text-decoration:line-through;color:#a1a1aa;font-size:13px}
+    .now{font-weight:800;color:var(--brand);font-size:18px}
+    .meta{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#a9b0ba}
+    .tag{background:#0f1012;border:1px solid #202327;border-radius:999px;padding:6px 10px;font-size:12px}
+    .cta{display:inline-block;text-align:center;background:var(--accent);color:#06121f;border:none;border-radius:12px;padding:10px 12px;font-weight:800;cursor:pointer;text-decoration:none}
+    footer{color:#7d8490;font-size:12px;text-align:center;padding:30px 0}
+    .empty{opacity:.7;text-align:center;padding:40px 10px}
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="brand">🏷️ SportDeals</div>
+    <div class="toolbar" style="margin-top:10px">
+      <input id="q" placeholder="Buscar..." />
+      <select id="cat"><option value="">Todas</option></select>
+      <select id="sort">
+        <option value="fecha-desc">Más recientes</option>
+        <option value="precio-asc">Precio ↑</option>
+        <option value="precio-desc">Precio ↓</option>
+      </select>
+    </div>
+  </div>
+</header>
+<main class="wrap">
+  <div id="grid" class="grid"></div>
+  <div id="empty" class="empty" style="display:none">No hay resultados.</div>
+</main>
+<footer>© SportDeals · Enlaces de afiliado (#ad)</footer>
+<script>
+const SHEET_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT1KsfcN4AUSWQOzFBdhzbmswKeDvQ4YQji_0uCYMMo7IBAchfKb8l6cGEfe-a6GZJzJmJqa_3Q1lyo/pub?gid=1588859322&single=true&output=csv
+";
+
+const csvToRows = (csv) => {
+  const lines = csv.split(/\r?\n/).filter(Boolean);
+  const headers = lines.shift().split(",");
+  return lines.map(line=>{
+    const cells = []; let cur="", inQ=false;
+    for(let i=0;i<line.length;i++){
+      const c=line[i], n=line[i+1];
+      if(c==='\"'){ if(inQ && n==='\"'){cur+='\"';i++;} else inQ=!inQ; }
+      else if(c===',' && !inQ){ cells.push(cur); cur=""; }
+      else cur+=c;
+    }
+    cells.push(cur);
+    const obj={}; headers.forEach((h,idx)=>obj[h.trim()]=cells[idx]);
+    return obj;
+  });
+};
+
+let DATA=[];
+async function load(){
+  const res = await fetch(SHEET_CSV,{cache:"no-store"});
+  const csv = await res.text();
+  DATA = csvToRows(csv);
+  render();
+}
+
+function pct(before, now){
+  const b=parseFloat((before||"").replace(",","."));
+  const n=parseFloat((now||"").replace(",","."));
+  if(!isFinite(b)||!isFinite(n)||b<=0) return null;
+  return Math.round((1 - n/b)*100);
+}
+
+function render(){
+  const q=document.getElementById('q').value.toLowerCase();
+  const cat=document.getElementById('cat').value;
+  const sort=document.getElementById('sort').value;
+  let rows=DATA.filter(r=>(r.Estado||"").toLowerCase()==="listo");
+  if(cat) rows=rows.filter(r=>(r.Categoria||"").toLowerCase()===cat.toLowerCase());
+  if(q) rows=rows.filter(r=>`${r.Titulo} ${r.Bullets}`.toLowerCase().includes(q));
+  if(sort==="precio-asc") rows.sort((a,b)=>a.Precio_Ahora-b.Precio_Ahora);
+  if(sort==="precio-desc") rows.sort((a,b)=>b.Precio_Ahora-a.Precio_Ahora);
+
+  document.getElementById('grid').innerHTML="";
+  rows.forEach(r=>{
+    const p=pct(r.Precio_Antes,r.Precio_Ahora);
+    const utm="?utm_source=web&utm_medium=affiliate&utm_campaign=sportdeals";
+    const link=(r.Enlace||"").includes("?")?`${r.Enlace}&${utm.slice(1)}`:`${r.Enlace}${utm}`;
+    const div=document.createElement("div");
+    div.className="card";
+    div.innerHTML=`
+      <img class="thumb" src="${r.Imagen}" alt="${r.Titulo}">
+      <div class="content">
+        <div class="title">${r.Titulo}</div>
+        <div class="bullets">${(r.Bullets||"").replace(/;/g,"<br>")}</div>
+        <div class="price">
+          <span class="before">${r.Precio_Antes}</span>
+          <span class="now">${r.Precio_Ahora}${p?" (-"+p+"%)":""}</span>
+        </div>
+        <div class="meta"><span class="tag">${r.Categoria}</span></div>
+        <a class="cta" href="${link}" target="_blank" rel="sponsored nofollow noopener">Ver oferta</a>
+      </div>`;
+    document.getElementById('grid').appendChild(div);
+  });
+}
+document.getElementById('q').oninput=render;
+document.getElementById('cat').onchange=render;
+document.getElementById('sort').onchange=render;
+load();
+</script>
+</body>
+</html>
