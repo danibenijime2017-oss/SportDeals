@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>SportDeals | Ofertas fitness</title>
-  <meta name="description" content="Las mejores ofertas de deporte: calzado, ropa, suplementos y accesorios." />
   <style>
     :root{--bg:#0b0b0c;--card:#141416;--muted:#8a8f98;--text:#f5f6f8;--brand:#6ee7b7;--accent:#60a5fa}
     *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
@@ -52,33 +51,34 @@
   <div id="empty" class="empty" style="display:none">No hay resultados.</div>
 </main>
 <footer>© SportDeals · Enlaces de afiliado (#ad)</footer>
+
 <script>
-const SHEET_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT1KsfcN4AUSWQOzFBdhzbmswKeDvQ4YQji_0uCYMMo7IBAchfKb8l6cGEfe-a6GZJzJmJqa_3Q1lyo/pub?gid=1588859322&single=true&output=csv
-";
+const SHEET_HTML = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT1KsfcN4AUSWQOzFBdhzbmswKeDvQ4YQji_0uCYMMo7IBAchfKb8l6cGEfe-a6GZJzJmJqa_3Q1lyo/pubhtml";
 
-const csvToRows = (csv) => {
-  const lines = csv.split(/\r?\n/).filter(Boolean);
-  const headers = lines.shift().split(",");
-  return lines.map(line=>{
-    const cells = []; let cur="", inQ=false;
-    for(let i=0;i<line.length;i++){
-      const c=line[i], n=line[i+1];
-      if(c==='\"'){ if(inQ && n==='\"'){cur+='\"';i++;} else inQ=!inQ; }
-      else if(c===',' && !inQ){ cells.push(cur); cur=""; }
-      else cur+=c;
-    }
-    cells.push(cur);
-    const obj={}; headers.forEach((h,idx)=>obj[h.trim()]=cells[idx]);
-    return obj;
-  });
-};
+let DATA = [];
 
-let DATA=[];
 async function load(){
-  const res = await fetch(SHEET_CSV,{cache:"no-store"});
-  const csv = await res.text();
-  DATA = csvToRows(csv);
-  render();
+  try{
+    const res = await fetch(SHEET_HTML);
+    const text = await res.text();
+
+    // Parsear el HTML de la hoja de Google
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, "text/html");
+    const rows = [...doc.querySelectorAll("table tbody tr")];
+    const headers = [...doc.querySelectorAll("table thead tr th")].map(th => th.innerText.trim());
+
+    DATA = rows.map(tr => {
+      const cells = [...tr.querySelectorAll("td")];
+      const obj = {};
+      headers.forEach((h,i)=> obj[h] = cells[i] ? cells[i].innerText.trim() : "");
+      return obj;
+    });
+
+    render();
+  } catch(err){
+    document.getElementById("grid").innerHTML = "<div class='empty'>Error al cargar datos.</div>";
+  }
 }
 
 function pct(before, now){
@@ -93,12 +93,20 @@ function render(){
   const cat=document.getElementById('cat').value;
   const sort=document.getElementById('sort').value;
   let rows=DATA.filter(r=>(r.Estado||"").toLowerCase()==="listo");
+
   if(cat) rows=rows.filter(r=>(r.Categoria||"").toLowerCase()===cat.toLowerCase());
   if(q) rows=rows.filter(r=>`${r.Titulo} ${r.Bullets}`.toLowerCase().includes(q));
+
   if(sort==="precio-asc") rows.sort((a,b)=>a.Precio_Ahora-b.Precio_Ahora);
   if(sort==="precio-desc") rows.sort((a,b)=>b.Precio_Ahora-a.Precio_Ahora);
 
-  document.getElementById('grid').innerHTML="";
+  const cats = [...new Set(DATA.map(r=>(r.Categoria||'').trim()).filter(Boolean))];
+  const catEl = document.getElementById('cat');
+  catEl.innerHTML = '<option value="">Todas</option>';
+  cats.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;catEl.appendChild(o);});
+
+  const grid=document.getElementById("grid");
+  grid.innerHTML="";
   rows.forEach(r=>{
     const p=pct(r.Precio_Antes,r.Precio_Ahora);
     const utm="?utm_source=web&utm_medium=affiliate&utm_campaign=sportdeals";
@@ -114,16 +122,4 @@ function render(){
           <span class="before">${r.Precio_Antes}</span>
           <span class="now">${r.Precio_Ahora}${p?" (-"+p+"%)":""}</span>
         </div>
-        <div class="meta"><span class="tag">${r.Categoria}</span></div>
-        <a class="cta" href="${link}" target="_blank" rel="sponsored nofollow noopener">Ver oferta</a>
-      </div>`;
-    document.getElementById('grid').appendChild(div);
-  });
-}
-document.getElementById('q').oninput=render;
-document.getElementById('cat').onchange=render;
-document.getElementById('sort').onchange=render;
-load();
-</script>
-</body>
-</html>
+
