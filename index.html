@@ -146,7 +146,6 @@ function render(){
     card.innerHTML=`
 <img class="thumb" src="${r.Imagen||''}" alt="${r.Titulo||'Producto'}"
      onerror="this.src='https://via.placeholder.com/300x225/0f1012/384150?text=Sin+imagen';" />
-
       <div class="content">
         <div class="title">${r.Titulo||""}</div>
         <div class="bullets">${(r.Bullets||"").split(/;|\n|•/).map(s=>s.trim()).filter(Boolean).map(b=>`• ${b}`).join("<br>")}</div>
