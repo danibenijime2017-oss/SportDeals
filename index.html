@@ -71,28 +71,69 @@ function pct(before, now){
   return Math.round((1 - n/b)*100);
 }
 
+<script>
 async function load(){
   const status = document.getElementById('status');
-  try{
-    const t0 = Date.now();
-    const res = await fetch(SHEET_HTML, {cache:"no-store"});
-    const html = await res.text();
+  const t0 = Date.now();
 
-    // Parsear el HTML de Google Sheets (tabla principal)
+  // Helper para parsear una página y devolver {headers, rows} si hay tabla
+  const parseTableFromHtml = (html) => {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
     const table = doc.querySelector("table");
-    if(!table){ throw new Error("No se encontró tabla en pubhtml"); }
-
+    if(!table) return null;
     const headers = [...table.querySelectorAll("thead tr th")].map(th => th.innerText.trim());
     const rowsEls = [...table.querySelectorAll("tbody tr")];
-
-    DATA = rowsEls.map(tr=>{
+    const rows = rowsEls.map(tr=>{
       const tds=[...tr.querySelectorAll("td")];
       const obj={};
       headers.forEach((h,i)=> obj[h] = tds[i] ? tds[i].innerText.trim() : "");
       return obj;
     });
+    return { headers, rows };
+  };
+
+  try{
+    // 1) Intento directo al pubhtml que has configurado
+    let res = await fetch(SHEET_HTML, {cache:"no-store"});
+    let html = await res.text();
+
+    // ¿La tabla viene directa?
+    let parsed = parseTableFromHtml(html);
+
+    // 2) Si NO hay tabla, buscar iframe y fetchear su src (la tabla real suele estar ahí)
+    if(!parsed){
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const iframe = doc.querySelector("iframe");
+      if(!iframe || !iframe.src){
+        throw new Error("No se encontró tabla ni iframe con la hoja publicada.");
+      }
+
+      // Normalmente el iframe ya trae ?gid=...&single=true; por si acaso, lo respetamos tal cual
+      res = await fetch(iframe.src, {cache:"no-store"});
+      html = await res.text();
+      parsed = parseTableFromHtml(html);
+
+      if(!parsed){
+        throw new Error("No se encontró tabla dentro del iframe del pubhtml.");
+      }
+    }
+
+    // 3) Tenemos datos 🎉
+    DATA = parsed.rows || [];
+    const visibles = DATA.filter(r => (r.Estado||"").toLowerCase().trim()==="listo");
+    const ms = Date.now()-t0;
+    status.textContent = `Última actualización: ${new Date().toLocaleString()} · Filas totales: ${DATA.length} · Publicadas: ${visibles.length} · ${ms} ms`;
+
+    render();
+  }catch(e){
+    console.error("[SportDeals] Error en load():", e);
+    status.textContent = "Error cargando la hoja publicada. Revisa que el pubhtml sea público y contenga datos.";
+    document.getElementById("grid").innerHTML = "<div class='empty'>Error al cargar datos.</div>";
+  }
+}
+</script>
+
 
     const visibles = DATA.filter(r => (r.Estado||"").toLowerCase().trim()==="listo");
     const ms = Date.now()-t0;
