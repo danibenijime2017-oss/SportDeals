@@ -59,201 +59,234 @@
 <footer>© SportDeals · Enlaces de afiliado (#ad)</footer>
 
 <script>
-/* 🔗 Tu hoja publicada como HTML (pubhtml) */
+/* 🔗 Hoja publicada como HTML (usa la pestaña correcta con gid y single=true) */
 const SHEET_HTML = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT1KsfcN4AUSWQOzFBdhzbmswKeDvQ4YQji_0uCYMMo7IBAchfKb8l6cGEfe-a6GZJzJmJqa_3Q1lyo/pubhtml?gid=1588859322&single=true";
 
-/* ✅ Fallback inline (sin hosts externos) */
-const FALLBACK_IMG = "data:image/svg+xml;base64," + btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 225"><rect width="100%" height="100%" fill="#0f1012"/><text x="50%" y="50%" fill="#384150" font-size="16" text-anchor="middle" dominant-baseline="middle">Sin imagen</text></svg>');
+/* ✅ Fallback inline para imágenes rotas (sin hosts externos) */
+const FALLBACK_IMG =
+  "data:image/svg+xml;base64," +
+  btoa(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 225"><rect width="100%" height="100%" fill="#0f1012"/><text x="50%" y="50%" fill="#384150" font-size="16" text-anchor="middle" dominant-baseline="middle">Sin imagen</text></svg>'
+  );
 
 let DATA = [];
 
-function pct(before, now){
-  const b=parseFloat(String(before||"").replace(",", "."));
-  const n=parseFloat(String(now||"").replace(",", "."));
-  if(!isFinite(b)||!isFinite(n)||b<=0) return null;
-  return Math.round((1 - n/b)*100);
+/* Utilidades */
+function pct(before, now) {
+  const b = parseFloat(String(before || "").replace(",", "."));
+  const n = parseFloat(String(now || "").replace(",", "."));
+  if (!isFinite(b) || !isFinite(n) || b <= 0) return null;
+  return Math.round((1 - n / b) * 100);
 }
 
-function parseTableFromHtml(html){
+function parseTableFromHtml(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, "text/html");
   const table = doc.querySelector("table");
-  if(!table) return null;
-  const headers = [...table.querySelectorAll("thead tr th")].map(th => th.innerText.trim());
+  if (!table) return null;
+  const headers = [...table.querySelectorAll("thead tr th")].map((th) =>
+    th.innerText.trim()
+  );
   const rowsEls = [...table.querySelectorAll("tbody tr")];
-  const rows = rowsEls.map(tr=>{
-    const tds=[...tr.querySelectorAll("td")];
-    const obj={};
-    headers.forEach((h,i)=> obj[h] = tds[i] ? tds[i].innerText.trim() : "");
+  const rows = rowsEls.map((tr) => {
+    const tds = [...tr.querySelectorAll("td")];
+    const obj = {};
+    headers.forEach((h, i) => (obj[h] = tds[i] ? tds[i].innerText.trim() : ""));
     return obj;
   });
-  return {headers, rows};
+  return { headers, rows };
 }
 
-async function load(){
-  const status = document.getElementById('status');
+/* Carga datos del pubhtml (maneja meta-refresh e iframe) */
+async function load() {
+  const status = document.getElementById("status");
   const t0 = Date.now();
-
-  const parseTableFromHtml = (html) => {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, "text/html");
-    const table = doc.querySelector("table");
-    if(!table) return null;
-    const headers = [...table.querySelectorAll("thead tr th")].map(th => th.innerText.trim());
-    const rowsEls = [...table.querySelectorAll("tbody tr")];
-    const rows = rowsEls.map(tr=>{
-      const tds=[...tr.querySelectorAll("td")];
-      const obj={};
-      headers.forEach((h,i)=> obj[h] = tds[i] ? tds[i].innerText.trim() : "");
-      return obj;
-    });
-    return {headers, rows};
-  };
 
   const followMetaRefresh = (html, base) => {
     const doc = new DOMParser().parseFromString(html, "text/html");
     const meta = doc.querySelector('meta[http-equiv="refresh"]');
-    if(!meta) return null;
-    const content = meta.getAttribute('content')||"";
+    if (!meta) return null;
+    const content = meta.getAttribute("content") || "";
     const m = content.match(/url=(.*)$/i);
-    if(!m) return null;
-    try{ return new URL(m[1], base).toString(); }catch{ return null; }
+    if (!m) return null;
+    try {
+      return new URL(m[1], base).toString();
+    } catch {
+      return null;
+    }
   };
 
-  try{
+  try {
     // 1) Intento directo
-    let res = await fetch(SHEET_HTML, {cache:"no-store"});
+    let res = await fetch(SHEET_HTML, { cache: "no-store" });
     let html = await res.text();
 
-    // 1a) ¿meta-refresh?
-    let next = followMetaRefresh(html, SHEET_HTML);
-    if(next){
-      res = await fetch(next, {cache:"no-store"});
+    // 1a) Seguir meta-refresh si existe
+    const next = followMetaRefresh(html, SHEET_HTML);
+    if (next) {
+      res = await fetch(next, { cache: "no-store" });
       html = await res.text();
     }
 
-    // 2) ¿tabla directa?
+    // 2) Tabla directa
     let parsed = parseTableFromHtml(html);
 
-    // 3) Si no, intentar iframe interno
-    if(!parsed){
+    // 3) Si no, intentar iframe
+    if (!parsed) {
       const doc = new DOMParser().parseFromString(html, "text/html");
       const iframe = doc.querySelector("iframe");
-      if(iframe && iframe.src){
-        res = await fetch(iframe.src, {cache:"no-store"});
-        html = await res.text();
-        parsed = parseTableFromHtml(html);
+      if (iframe && iframe.src) {
+        const r2 = await fetch(iframe.src, { cache: "no-store" });
+        const html2 = await r2.text();
+        parsed = parseTableFromHtml(html2);
       }
     }
 
-    if(!parsed) throw new Error("No se encontró tabla en pubhtml (ni meta-refresh ni iframe útiles).");
+    if (!parsed) throw new Error("No se encontró tabla en pubhtml.");
 
     DATA = parsed.rows || [];
-    const visibles = DATA.filter(r => (r.Estado||"").toLowerCase().trim()==="listo");
+    const visibles = DATA.filter(
+      (r) => (r.Estado || "").toLowerCase().trim() === "listo"
+    );
     const ms = Date.now() - t0;
     status.textContent = `Última actualización: ${new Date().toLocaleString()} · Filas totales: ${DATA.length} · Publicadas: ${visibles.length} · ${ms} ms`;
 
     render();
-  }catch(e){
+  } catch (e) {
     console.error("[SportDeals] Error en load():", e);
-    status.textContent = "Error cargando la hoja publicada. Revisa el enlace pubhtml con gid y single=true.";
-    document.getElementById("grid").innerHTML = "<div class='empty'>Error al cargar datos.</div>";
+    status.textContent =
+      "Error cargando la hoja publicada. Revisa que el pubhtml (con gid y single=true) sea público y contenga datos.";
+    document.getElementById("grid").innerHTML =
+      "<div class='empty'>Error al cargar datos.</div>";
   }
 }
 
-
-    DATA = parsed.rows || [];
-    const visibles = DATA.filter(r => (r.Estado||"").toLowerCase().trim()==="listo");
-    const ms = Date.now() - t0;
-    status.textContent = `Última actualización: ${new Date().toLocaleString()} · Filas totales: ${DATA.length} · Publicadas: ${visibles.length} · ${ms} ms`;
-
-    render();
-  }catch(e){
-    console.error("[SportDeals] Error en load():", e);
-    status.textContent = "Error cargando la hoja publicada. Revisa que el pubhtml sea público y contenga datos.";
-    document.getElementById("grid").innerHTML = "<div class='empty'>Error al cargar datos.</div>";
-  }
-}
-
-function render(){
-  const q=(document.getElementById('q').value||"").toLowerCase().trim();
-  const catSel=document.getElementById('cat').value;
-  const sort=document.getElementById('sort').value;
+/* Pinta tarjetas */
+function render() {
+  const q = (document.getElementById("q").value || "").toLowerCase().trim();
+  const catSel = document.getElementById("cat").value;
+  const sort = document.getElementById("sort").value;
 
   // Poblar categorías
-  const cats = [...new Set(DATA.map(r=>(r.Categoria||"").trim()).filter(Boolean))].sort();
-  const catEl = document.getElementById('cat');
-  catEl.innerHTML = '<option value="">Todas</option>' + cats.map(c=>`<option value="${c}">${c}</option>`).join("");
+  const cats = [...new Set(DATA.map((r) => (r.Categoria || "").trim()).filter(Boolean))].sort();
+  const catEl = document.getElementById("cat");
+  catEl.innerHTML =
+    '<option value="">Todas</option>' +
+    cats.map((c) => `<option value="${c}">${c}</option>`).join("");
 
-  let rows = DATA.filter(r => (r.Estado||"").toLowerCase().trim()==="listo");
-  if(catSel) rows = rows.filter(r => (r.Categoria||"").toLowerCase().trim()===catSel.toLowerCase().trim());
-  if(q) rows = rows.filter(r => `${r.Titulo||""} ${r.Bullets||""} ${r.Etiquetas||""}`.toLowerCase().includes(q));
+  // Filtrar
+  let rows = DATA.filter(
+    (r) => (r.Estado || "").toLowerCase().trim() === "listo"
+  );
+  if (catSel)
+    rows = rows.filter(
+      (r) => (r.Categoria || "").toLowerCase().trim() === catSel.toLowerCase().trim()
+    );
+  if (q)
+    rows = rows.filter((r) =>
+      `${r.Titulo || ""} ${r.Bullets || ""} ${r.Etiquetas || ""}`
+        .toLowerCase()
+        .includes(q)
+    );
 
-  // Orden por defecto: más recientes (FechaHora descendente)
-  if(sort==="fecha-desc"){
-    rows.sort((a,b)=> new Date(b.FechaHora||0) - new Date(a.FechaHora||0));
-  }else if(sort==="precio-asc"){
-    rows.sort((a,b)=> (parseFloat(String(a.Precio_Ahora||"").replace(",", "."))||9e9) - (parseFloat(String(b.Precio_Ahora||"").replace(",", "."))||9e9));
-  }else if(sort==="precio-desc"){
-    rows.sort((a,b)=> (parseFloat(String(b.Precio_Ahora||"").replace(",", "."))||-9e9) - (parseFloat(String(a.Precio_Ahora||"").replace(",", "."))||-9e9));
-  }else if(sort==="descuento-desc"){
-    const disc = r => pct(r.Precio_Antes, r.Precio_Ahora);
-    rows.sort((a,b)=> (disc(b)??-999) - (disc(a)??-999));
+  // Orden (por defecto, más recientes)
+  if (sort === "fecha-desc") {
+    rows.sort(
+      (a, b) => new Date(b.FechaHora || 0) - new Date(a.FechaHora || 0)
+    );
+  } else if (sort === "precio-asc") {
+    rows.sort(
+      (a, b) =>
+        (parseFloat(String(a.Precio_Ahora || "").replace(",", ".")) || 9e9) -
+        (parseFloat(String(b.Precio_Ahora || "").replace(",", ".")) || 9e9)
+    );
+  } else if (sort === "precio-desc") {
+    rows.sort(
+      (a, b) =>
+        (parseFloat(String(b.Precio_Ahora || "").replace(",", ".")) || -9e9) -
+        (parseFloat(String(a.Precio_Ahora || "").replace(",", ".")) || -9e9)
+    );
+  } else if (sort === "descuento-desc") {
+    const disc = (r) => pct(r.Precio_Antes, r.Precio_Ahora);
+    rows.sort((a, b) => (disc(b) ?? -999) - (disc(a) ?? -999));
   }
 
-  const grid=document.getElementById("grid");
-  grid.innerHTML="";
+  // Pintar
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
 
-  rows.forEach(r=>{
-    const p=pct(r.Precio_Antes, r.Precio_Ahora);
-    const utm="?utm_source=web&utm_medium=affiliate&utm_campaign=sportdeals";
-    const link=(r.Enlace||"").includes("?")?`${r.Enlace}&${utm.slice(1)}`:`${r.Enlace}${utm}`;
+  rows.forEach((r) => {
+    const p = pct(r.Precio_Antes, r.Precio_Ahora);
+    const utm = "?utm_source=web&utm_medium=affiliate&utm_campaign=sportdeals";
+    const link = (r.Enlace || "").includes("?")
+      ? `${r.Enlace}&${utm.slice(1)}`
+      : `${r.Enlace}${utm}`;
 
     // Card
-    const card=document.createElement("div");
-    card.className="card";
+    const card = document.createElement("div");
+    card.className = "card";
 
-    // Imagen (vía DOM, sin strings con comillas)
+    // Imagen por DOM (sin strings complicadas)
     const img = new Image();
     img.className = "thumb";
     img.alt = r.Titulo || "Producto";
     img.src = r.Imagen || "";
-    img.onerror = () => { img.src = FALLBACK_IMG; };
+    img.onerror = () => {
+      img.src = FALLBACK_IMG;
+    };
     card.appendChild(img);
 
-    // Resto del contenido
+    // Contenido
     const content = document.createElement("div");
     content.className = "content";
+
     const title = document.createElement("div");
     title.className = "title";
     title.textContent = r.Titulo || "";
+
     const bullets = document.createElement("div");
     bullets.className = "bullets";
-    const bulletList = (r.Bullets||"").split(/;|\n|•/).map(s=>s.trim()).filter(Boolean).map(b=>"• "+b).join("\n");
-    bullets.innerHTML = bulletList.replace(/\n/g,"<br>");
+    const bulletList = (r.Bullets || "")
+      .split(/;|\n|•/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((b) => "• " + b)
+      .join("<br>");
+    bullets.innerHTML = bulletList;
+
     const price = document.createElement("div");
     price.className = "price";
-    if(r.Precio_Antes){
+    if (r.Precio_Antes) {
       const before = document.createElement("span");
       before.className = "before";
       before.textContent = r.Precio_Antes;
       price.appendChild(before);
     }
-    if(r.Precio_Ahora){
+    if (r.Precio_Ahora) {
       const now = document.createElement("span");
       now.className = "now";
-      now.innerHTML = r.Precio_Ahora + (p!==null ? ` <span style="color:#a7f3d0;font-weight:700">(-${p}%)</span>` : "");
+      now.innerHTML =
+        r.Precio_Ahora +
+        (p !== null
+          ? ` <span style="color:#a7f3d0;font-weight:700">(-${p}%)</span>`
+          : "");
       price.appendChild(now);
     }
+
     const meta = document.createElement("div");
     meta.className = "meta";
     const tag = document.createElement("span");
     tag.className = "tag";
-    tag.textContent = (r.Categoria||"").toUpperCase();
+    tag.textContent = (r.Categoria || "").toUpperCase();
     const tags = document.createElement("span");
     tags.style.color = "#a9b0ba";
     tags.style.fontSize = "12px";
-    const tagList = (r.Etiquetas||"").split(/[#\s]+/).filter(Boolean).slice(0,4).map(t=>"#"+t).join(" ");
+    const tagList = (r.Etiquetas || "")
+      .split(/[#\s]+/)
+      .filter(Boolean)
+      .slice(0, 4)
+      .map((t) => "#" + t)
+      .join(" ");
     tags.textContent = tagList;
 
     meta.appendChild(tag);
@@ -267,7 +300,8 @@ function render(){
 
     // Botones
     const btnRow = document.createElement("div");
-    btnRow.style.cssText = "display:flex;gap:10px;align-items:center;padding:0 14px 14px";
+    btnRow.style.cssText =
+      "display:flex;gap:10px;align-items:center;padding:0 14px 14px";
     const a1 = document.createElement("a");
     a1.className = "cta";
     a1.href = link || "#";
@@ -291,17 +325,18 @@ function render(){
   document.getElementById("empty").style.display = rows.length ? "none" : "block";
 }
 
-// Eventos UI
-document.getElementById('q').addEventListener('input', render);
-document.getElementById('cat').addEventListener('change', render);
-document.getElementById('sort').addEventListener('change', render);
+/* Eventos UI */
+document.getElementById("q").addEventListener("input", render);
+document.getElementById("cat").addEventListener("change", render);
+document.getElementById("sort").addEventListener("change", render);
 
-// Auto-refresco cada 5 minutos
+/* 🔁 Auto-refresco cada 5 minutos */
 setInterval(load, 5 * 60 * 1000);
 
-// Primera carga
+/* Primera carga */
 load();
 </script>
+
 </body>
 </html>
 
