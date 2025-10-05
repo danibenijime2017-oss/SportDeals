@@ -62,6 +62,10 @@
 /* 🔗 Tu hoja publicada como HTML (pubhtml) */
 const SHEET_HTML = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT1KsfcN4AUSWQOzFBdhzbmswKeDvQ4YQji_0uCYMMo7IBAchfKb8l6cGEfe-a6GZJzJmJqa_3Q1lyo/pubhtml";
 
+/* ✅ Fallback local para imágenes rotas (sin hosts externos) */
+const FALLBACK_IMG = "data:image/svg+xml;base64," +
+  btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 225"><rect width="100%" height="100%" fill="#0f1012"/><text x="50%" y="50%" fill="#384150" font-size="16" text-anchor="middle" dominant-baseline="middle">Sin imagen</text></svg>');
+
 let DATA = [];
 
 function pct(before, now){
@@ -71,78 +75,54 @@ function pct(before, now){
   return Math.round((1 - n/b)*100);
 }
 
-<script>
+/* 🧠 Parser tabla desde HTML */
+function parseTableFromHtml(html){
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  const table = doc.querySelector("table");
+  if(!table) return null;
+  const headers = [...table.querySelectorAll("thead tr th")].map(th => th.innerText.trim());
+  const rowsEls = [...table.querySelectorAll("tbody tr")];
+  const rows = rowsEls.map(tr=>{
+    const tds=[...tr.querySelectorAll("td")];
+    const obj={};
+    headers.forEach((h,i)=> obj[h] = tds[i] ? tds[i].innerText.trim() : "");
+    return obj;
+  });
+  return {headers, rows};
+}
+
 async function load(){
   const status = document.getElementById('status');
   const t0 = Date.now();
-
-  // Helper para parsear una página y devolver {headers, rows} si hay tabla
-  const parseTableFromHtml = (html) => {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, "text/html");
-    const table = doc.querySelector("table");
-    if(!table) return null;
-    const headers = [...table.querySelectorAll("thead tr th")].map(th => th.innerText.trim());
-    const rowsEls = [...table.querySelectorAll("tbody tr")];
-    const rows = rowsEls.map(tr=>{
-      const tds=[...tr.querySelectorAll("td")];
-      const obj={};
-      headers.forEach((h,i)=> obj[h] = tds[i] ? tds[i].innerText.trim() : "");
-      return obj;
-    });
-    return { headers, rows };
-  };
-
   try{
-    // 1) Intento directo al pubhtml que has configurado
+    // 1) Descargar pubhtml
     let res = await fetch(SHEET_HTML, {cache:"no-store"});
     let html = await res.text();
 
-    // ¿La tabla viene directa?
+    // 2) Intentar tabla directa
     let parsed = parseTableFromHtml(html);
 
-    // 2) Si NO hay tabla, buscar iframe y fetchear su src (la tabla real suele estar ahí)
+    // 3) Si no hay tabla, buscar iframe y fetchear su src
     if(!parsed){
       const doc = new DOMParser().parseFromString(html, "text/html");
       const iframe = doc.querySelector("iframe");
-      if(!iframe || !iframe.src){
-        throw new Error("No se encontró tabla ni iframe con la hoja publicada.");
-      }
-
-      // Normalmente el iframe ya trae ?gid=...&single=true; por si acaso, lo respetamos tal cual
+      if(!iframe || !iframe.src) throw new Error("No se encontró tabla ni iframe en pubhtml.");
       res = await fetch(iframe.src, {cache:"no-store"});
       html = await res.text();
       parsed = parseTableFromHtml(html);
-
-      if(!parsed){
-        throw new Error("No se encontró tabla dentro del iframe del pubhtml.");
-      }
+      if(!parsed) throw new Error("No se encontró tabla dentro del iframe.");
     }
 
-    // 3) Tenemos datos 🎉
     DATA = parsed.rows || [];
     const visibles = DATA.filter(r => (r.Estado||"").toLowerCase().trim()==="listo");
-    const ms = Date.now()-t0;
+    const ms = Date.now() - t0;
     status.textContent = `Última actualización: ${new Date().toLocaleString()} · Filas totales: ${DATA.length} · Publicadas: ${visibles.length} · ${ms} ms`;
 
     render();
   }catch(e){
     console.error("[SportDeals] Error en load():", e);
     status.textContent = "Error cargando la hoja publicada. Revisa que el pubhtml sea público y contenga datos.";
-    document.getElementById("grid").innerHTML = "<div class='empty'>Error al cargar datos.</div>";
-  }
-}
-</script>
-
-
-    const visibles = DATA.filter(r => (r.Estado||"").toLowerCase().trim()==="listo");
-    const ms = Date.now()-t0;
-    status.textContent = `Última actualización: ${new Date().toLocaleString()} · Filas totales: ${DATA.length} · Publicadas: ${visibles.length} · ${ms} ms`;
-
-    render();
-  }catch(e){
-    console.error("[SportDeals] Error:", e);
-    status.textContent = "Error cargando la hoja publicada (pubhtml). Revisa el enlace.";
     document.getElementById("grid").innerHTML = "<div class='empty'>Error al cargar datos.</div>";
   }
 }
@@ -158,11 +138,10 @@ function render(){
   catEl.innerHTML = '<option value="">Todas</option>' + cats.map(c=>`<option value="${c}">${c}</option>`).join("");
 
   let rows = DATA.filter(r => (r.Estado||"").toLowerCase().trim()==="listo");
-
   if(catSel) rows = rows.filter(r => (r.Categoria||"").toLowerCase().trim()===catSel.toLowerCase().trim());
   if(q) rows = rows.filter(r => `${r.Titulo||""} ${r.Bullets||""} ${r.Etiquetas||""}`.toLowerCase().includes(q));
 
-  // 🔽 Orden por defecto: más recientes (FechaHora descendente)
+  // Orden: más recientes (FechaHora descendente)
   if(sort==="fecha-desc"){
     rows.sort((a,b)=> new Date(b.FechaHora||0) - new Date(a.FechaHora||0));
   }else if(sort==="precio-asc"){
@@ -184,9 +163,8 @@ function render(){
 
     const card=document.createElement("div");
     card.className="card";
-    card.innerHTML=`
-<img class="thumb" src="${r.Imagen||''}" alt="${r.Titulo||'Producto'}"
-     onerror="this.src='https://via.placeholder.com/300x225/0f1012/384150?text=Sin+imagen';" />
+    card.innerHTML = `
+      <img class="thumb" src="${r.Imagen||""}" alt="${r.Titulo||"Producto"}" onerror="this.src='${FALLBACK_IMG}';" />
       <div class="content">
         <div class="title">${r.Titulo||""}</div>
         <div class="bullets">${(r.Bullets||"").split(/;|\n|•/).map(s=>s.trim()).filter(Boolean).map(b=>`• ${b}`).join("<br>")}</div>
@@ -210,7 +188,7 @@ function render(){
   document.getElementById("empty").style.display = rows.length ? "none" : "block";
 }
 
-// UI events
+// UI
 document.getElementById('q').addEventListener('input', render);
 document.getElementById('cat').addEventListener('change', render);
 document.getElementById('sort').addEventListener('change', render);
@@ -223,5 +201,6 @@ load();
 </script>
 </body>
 </html>
+
 
 
