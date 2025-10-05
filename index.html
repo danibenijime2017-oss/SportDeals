@@ -93,20 +93,74 @@ function parseTableFromHtml(html){
 async function load(){
   const status = document.getElementById('status');
   const t0 = Date.now();
+
+  const parseTableFromHtml = (html) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const table = doc.querySelector("table");
+    if(!table) return null;
+    const headers = [...table.querySelectorAll("thead tr th")].map(th => th.innerText.trim());
+    const rowsEls = [...table.querySelectorAll("tbody tr")];
+    const rows = rowsEls.map(tr=>{
+      const tds=[...tr.querySelectorAll("td")];
+      const obj={};
+      headers.forEach((h,i)=> obj[h] = tds[i] ? tds[i].innerText.trim() : "");
+      return obj;
+    });
+    return {headers, rows};
+  };
+
+  const followMetaRefresh = (html, base) => {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const meta = doc.querySelector('meta[http-equiv="refresh"]');
+    if(!meta) return null;
+    const content = meta.getAttribute('content')||"";
+    const m = content.match(/url=(.*)$/i);
+    if(!m) return null;
+    try{ return new URL(m[1], base).toString(); }catch{ return null; }
+  };
+
   try{
+    // 1) Intento directo
     let res = await fetch(SHEET_HTML, {cache:"no-store"});
     let html = await res.text();
 
+    // 1a) ¿meta-refresh?
+    let next = followMetaRefresh(html, SHEET_HTML);
+    if(next){
+      res = await fetch(next, {cache:"no-store"});
+      html = await res.text();
+    }
+
+    // 2) ¿tabla directa?
     let parsed = parseTableFromHtml(html);
+
+    // 3) Si no, intentar iframe interno
     if(!parsed){
       const doc = new DOMParser().parseFromString(html, "text/html");
       const iframe = doc.querySelector("iframe");
-      if(!iframe || !iframe.src) throw new Error("No se encontró tabla ni iframe en pubhtml.");
-      res = await fetch(iframe.src, {cache:"no-store"});
-      html = await res.text();
-      parsed = parseTableFromHtml(html);
-      if(!parsed) throw new Error("No se encontró tabla dentro del iframe.");
+      if(iframe && iframe.src){
+        res = await fetch(iframe.src, {cache:"no-store"});
+        html = await res.text();
+        parsed = parseTableFromHtml(html);
+      }
     }
+
+    if(!parsed) throw new Error("No se encontró tabla en pubhtml (ni meta-refresh ni iframe útiles).");
+
+    DATA = parsed.rows || [];
+    const visibles = DATA.filter(r => (r.Estado||"").toLowerCase().trim()==="listo");
+    const ms = Date.now() - t0;
+    status.textContent = `Última actualización: ${new Date().toLocaleString()} · Filas totales: ${DATA.length} · Publicadas: ${visibles.length} · ${ms} ms`;
+
+    render();
+  }catch(e){
+    console.error("[SportDeals] Error en load():", e);
+    status.textContent = "Error cargando la hoja publicada. Revisa el enlace pubhtml con gid y single=true.";
+    document.getElementById("grid").innerHTML = "<div class='empty'>Error al cargar datos.</div>";
+  }
+}
+
 
     DATA = parsed.rows || [];
     const visibles = DATA.filter(r => (r.Estado||"").toLowerCase().trim()==="listo");
