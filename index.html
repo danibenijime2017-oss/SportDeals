@@ -62,9 +62,8 @@
 /* 🔗 Tu hoja publicada como HTML (pubhtml) */
 const SHEET_HTML = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT1KsfcN4AUSWQOzFBdhzbmswKeDvQ4YQji_0uCYMMo7IBAchfKb8l6cGEfe-a6GZJzJmJqa_3Q1lyo/pubhtml";
 
-/* ✅ Fallback local para imágenes rotas (sin hosts externos) */
-const FALLBACK_IMG = "data:image/svg+xml;base64," +
-  btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 225"><rect width="100%" height="100%" fill="#0f1012"/><text x="50%" y="50%" fill="#384150" font-size="16" text-anchor="middle" dominant-baseline="middle">Sin imagen</text></svg>');
+/* ✅ Fallback inline (sin hosts externos) */
+const FALLBACK_IMG = "data:image/svg+xml;base64," + btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 225"><rect width="100%" height="100%" fill="#0f1012"/><text x="50%" y="50%" fill="#384150" font-size="16" text-anchor="middle" dominant-baseline="middle">Sin imagen</text></svg>');
 
 let DATA = [];
 
@@ -75,7 +74,6 @@ function pct(before, now){
   return Math.round((1 - n/b)*100);
 }
 
-/* 🧠 Parser tabla desde HTML */
 function parseTableFromHtml(html){
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, "text/html");
@@ -96,14 +94,10 @@ async function load(){
   const status = document.getElementById('status');
   const t0 = Date.now();
   try{
-    // 1) Descargar pubhtml
     let res = await fetch(SHEET_HTML, {cache:"no-store"});
     let html = await res.text();
 
-    // 2) Intentar tabla directa
     let parsed = parseTableFromHtml(html);
-
-    // 3) Si no hay tabla, buscar iframe y fetchear su src
     if(!parsed){
       const doc = new DOMParser().parseFromString(html, "text/html");
       const iframe = doc.querySelector("iframe");
@@ -141,7 +135,7 @@ function render(){
   if(catSel) rows = rows.filter(r => (r.Categoria||"").toLowerCase().trim()===catSel.toLowerCase().trim());
   if(q) rows = rows.filter(r => `${r.Titulo||""} ${r.Bullets||""} ${r.Etiquetas||""}`.toLowerCase().includes(q));
 
-  // Orden: más recientes (FechaHora descendente)
+  // Orden por defecto: más recientes (FechaHora descendente)
   if(sort==="fecha-desc"){
     rows.sort((a,b)=> new Date(b.FechaHora||0) - new Date(a.FechaHora||0));
   }else if(sort==="precio-asc"){
@@ -161,39 +155,94 @@ function render(){
     const utm="?utm_source=web&utm_medium=affiliate&utm_campaign=sportdeals";
     const link=(r.Enlace||"").includes("?")?`${r.Enlace}&${utm.slice(1)}`:`${r.Enlace}${utm}`;
 
+    // Card
     const card=document.createElement("div");
     card.className="card";
-    card.innerHTML = `
-      <img class="thumb" src="${r.Imagen||""}" alt="${r.Titulo||"Producto"}" onerror="this.src='${FALLBACK_IMG}';" />
-      <div class="content">
-        <div class="title">${r.Titulo||""}</div>
-        <div class="bullets">${(r.Bullets||"").split(/;|\n|•/).map(s=>s.trim()).filter(Boolean).map(b=>`• ${b}`).join("<br>")}</div>
-        <div class="price">
-          ${r.Precio_Antes?`<span class="before">${r.Precio_Antes}</span>`:""}
-          ${r.Precio_Ahora?`<span class="now">${r.Precio_Ahora}${p!==null?` <span style="color:#a7f3d0;font-weight:700">(-${p}%)</span>`:""}</span>`:""}
-        </div>
-        <div class="meta">
-          <span class="tag">${(r.Categoria||"").toUpperCase()}</span>
-          <span style="color:#a9b0ba;font-size:12px">${(r.Etiquetas||"").split(/[#\s]+/).filter(Boolean).slice(0,4).map(t=>"#"+t).join(" ")}</span>
-        </div>
-      </div>
-      <div style="display:flex;gap:10px;align-items:center;padding:0 14px 14px">
-        <a class="cta" href="${link}" target="_blank" rel="sponsored nofollow noopener">Ver oferta</a>
-        <a class="cta" style="background:#22d3ee" href="${r.Enlace||'#'}" target="_blank" rel="sponsored nofollow noopener">Link limpio</a>
-      </div>
-    `;
+
+    // Imagen (vía DOM, sin strings con comillas)
+    const img = new Image();
+    img.className = "thumb";
+    img.alt = r.Titulo || "Producto";
+    img.src = r.Imagen || "";
+    img.onerror = () => { img.src = FALLBACK_IMG; };
+    card.appendChild(img);
+
+    // Resto del contenido
+    const content = document.createElement("div");
+    content.className = "content";
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = r.Titulo || "";
+    const bullets = document.createElement("div");
+    bullets.className = "bullets";
+    const bulletList = (r.Bullets||"").split(/;|\n|•/).map(s=>s.trim()).filter(Boolean).map(b=>"• "+b).join("\n");
+    bullets.innerHTML = bulletList.replace(/\n/g,"<br>");
+    const price = document.createElement("div");
+    price.className = "price";
+    if(r.Precio_Antes){
+      const before = document.createElement("span");
+      before.className = "before";
+      before.textContent = r.Precio_Antes;
+      price.appendChild(before);
+    }
+    if(r.Precio_Ahora){
+      const now = document.createElement("span");
+      now.className = "now";
+      now.innerHTML = r.Precio_Ahora + (p!==null ? ` <span style="color:#a7f3d0;font-weight:700">(-${p}%)</span>` : "");
+      price.appendChild(now);
+    }
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = (r.Categoria||"").toUpperCase();
+    const tags = document.createElement("span");
+    tags.style.color = "#a9b0ba";
+    tags.style.fontSize = "12px";
+    const tagList = (r.Etiquetas||"").split(/[#\s]+/).filter(Boolean).slice(0,4).map(t=>"#"+t).join(" ");
+    tags.textContent = tagList;
+
+    meta.appendChild(tag);
+    meta.appendChild(tags);
+
+    content.appendChild(title);
+    content.appendChild(bullets);
+    content.appendChild(price);
+    content.appendChild(meta);
+    card.appendChild(content);
+
+    // Botones
+    const btnRow = document.createElement("div");
+    btnRow.style.cssText = "display:flex;gap:10px;align-items:center;padding:0 14px 14px";
+    const a1 = document.createElement("a");
+    a1.className = "cta";
+    a1.href = link || "#";
+    a1.target = "_blank";
+    a1.rel = "sponsored nofollow noopener";
+    a1.textContent = "Ver oferta";
+    const a2 = document.createElement("a");
+    a2.className = "cta";
+    a2.style.background = "#22d3ee";
+    a2.href = r.Enlace || "#";
+    a2.target = "_blank";
+    a2.rel = "sponsored nofollow noopener";
+    a2.textContent = "Link limpio";
+    btnRow.appendChild(a1);
+    btnRow.appendChild(a2);
+    card.appendChild(btnRow);
+
     grid.appendChild(card);
   });
 
   document.getElementById("empty").style.display = rows.length ? "none" : "block";
 }
 
-// UI
+// Eventos UI
 document.getElementById('q').addEventListener('input', render);
 document.getElementById('cat').addEventListener('change', render);
 document.getElementById('sort').addEventListener('change', render);
 
-// ⏱️ Auto-refresco cada 5 minutos
+// Auto-refresco cada 5 minutos
 setInterval(load, 5 * 60 * 1000);
 
 // Primera carga
@@ -201,6 +250,7 @@ load();
 </script>
 </body>
 </html>
+
 
 
 
