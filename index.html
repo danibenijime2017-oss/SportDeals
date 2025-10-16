@@ -59,10 +59,10 @@
 <footer>© SportDeals · Enlaces de afiliado (#ad)</footer>
 
 <script>
-/* 🔗 GViz JSON de tu hoja publicada: usa el mismo ID y gid */
+/* 🔗 GViz JSON de tu hoja (ID real /d/... y gid correcto) */
 const GVIZ_JSON = "https://docs.google.com/spreadsheets/d/1WUaHmN1zRvdPho4NQ_DTXmi-Sn8BH0iFJi395yAx_vU/gviz/tq?gid=1588859322&tqx=out:json";
 
-/* ✅ Fallback inline para imágenes rotas (sin hosts externos) */
+/* ✅ Fallback inline para imágenes rotas */
 const FALLBACK_IMG =
   "data:image/svg+xml;base64," +
   btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 225"><rect width="100%" height="100%" fill="#0f1012"/><text x="50%" y="50%" fill="#384150" font-size="16" text-anchor="middle" dominant-baseline="middle">Sin imagen</text></svg>');
@@ -77,9 +77,8 @@ function pct(before, now) {
   return Math.round((1 - n / b) * 100);
 }
 
-/* Parsear GViz JSON (quita el wrapper y convierte a objetos por etiqueta de columna) */
+/* Parsear GViz JSON */
 function parseGviz(jsonText) {
-  // Respuesta viene como: google.visualization.Query.setResponse({...});
   const start = jsonText.indexOf("{");
   const end = jsonText.lastIndexOf("}");
   if (start === -1 || end === -1) throw new Error("GViz JSON inválido");
@@ -93,7 +92,7 @@ function parseGviz(jsonText) {
     r.c.forEach((cell, i) => {
       const key = labels[i] || ("Col" + i);
       let v = cell ? (cell.f ?? cell.v) : "";
-      if (v && typeof v === "object" && v !== null) v = v.v ?? ""; // por si Google manda objetos raros
+      if (v && typeof v === "object" && v !== null) v = v.v ?? "";
       if (typeof v === "string") v = v.trim();
       o[key] = v ?? "";
     });
@@ -102,7 +101,7 @@ function parseGviz(jsonText) {
   return rows;
 }
 
-/* Carga datos desde GViz */
+/* Carga datos */
 async function load() {
   const status = document.getElementById("status");
   const t0 = Date.now();
@@ -123,7 +122,7 @@ async function load() {
   }
 }
 
-/* Pinta tarjetas */
+/* Pintar tarjetas */
 function render() {
   const q = (document.getElementById("q").value || "").toLowerCase().trim();
   const catSel = document.getElementById("cat").value;
@@ -163,13 +162,11 @@ function render() {
 
   rows.forEach(r => {
     const p = pct(r.Precio_Antes, r.Precio_Ahora);
-    const utm = "?utm_source=web&utm_medium=affiliate&utm_campaign=sportdeals";
-    const link = (r.Enlace || "").includes("?") ? `${r.Enlace}&${utm.slice(1)}` : `${r.Enlace}${utm}`;
 
     const card = document.createElement("div");
     card.className = "card";
 
-    // Imagen DOM + fallback
+    // Imagen + fallback
     const img = new Image();
     img.className = "thumb";
     img.alt = r.Titulo || "Producto";
@@ -234,23 +231,16 @@ function render() {
     content.appendChild(meta);
     card.appendChild(content);
 
+    // 🔘 ÚNICO BOTÓN: usa exactamente el link de la columna "Enlace"
     const btnRow = document.createElement("div");
     btnRow.style.cssText = "display:flex;gap:10px;align-items:center;padding:0 14px 14px";
     const a1 = document.createElement("a");
     a1.className = "cta";
-    a1.href = link || "#";
+    a1.href = r.Enlace || "#";
     a1.target = "_blank";
     a1.rel = "sponsored nofollow noopener";
     a1.textContent = "Ver oferta";
-    const a2 = document.createElement("a");
-    a2.className = "cta";
-    a2.style.background = "#22d3ee";
-    a2.href = r.Enlace || "#";
-    a2.target = "_blank";
-    a2.rel = "sponsored nofollow noopener";
-    a2.textContent = "Link limpio";
     btnRow.appendChild(a1);
-    btnRow.appendChild(a2);
     card.appendChild(btnRow);
 
     grid.appendChild(card);
@@ -271,10 +261,5 @@ setInterval(load, 5 * 60 * 1000);
 load();
 </script>
 
-
 </body>
 </html>
-
-
-
-
