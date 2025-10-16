@@ -59,13 +59,36 @@
 <footer>© SportDeals · Enlaces de afiliado (#ad)</footer>
 
 <script>
-/* 🔗 GViz JSON de tu hoja (ID real /d/... y gid correcto) */
+/* 🔗 GViz JSON (ID real /d/... y gid correcto de tu pestaña) */
 const GVIZ_JSON = "https://docs.google.com/spreadsheets/d/1WUaHmN1zRvdPho4NQ_DTXmi-Sn8BH0iFJi395yAx_vU/gviz/tq?gid=1588859322&tqx=out:json";
 
 /* ✅ Fallback inline para imágenes rotas */
 const FALLBACK_IMG =
   "data:image/svg+xml;base64," +
   btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 225"><rect width="100%" height="100%" fill="#0f1012"/><text x="50%" y="50%" fill="#384150" font-size="16" text-anchor="middle" dominant-baseline="middle">Sin imagen</text></svg>');
+
+/* Limpia URLs: sin saltos de línea, sin espacios; asegura https://; normaliza path */
+function cleanUrl(u){
+  if(!u) return "";
+  u = String(u).replace(/\r?\n/g,"").trim().replace(/\s+/g,"");
+  if(!/^https?:\/\//i.test(u)) u = "https://" + u;
+  try{
+    const url = new URL(u);
+    url.pathname = encodeURI(decodeURI(url.pathname));
+    return url.toString();
+  }catch{ return u; }
+}
+
+/* Obtiene un campo aunque el encabezado tenga espacios/mayúsculas distintos */
+function getField(row, name){
+  if (row[name] != null && row[name] !== "") return row[name];
+  const target = name.toLowerCase().trim().replace(/\s+/g,"");
+  for (const k of Object.keys(row)){
+    const norm = k.toLowerCase().trim().replace(/\s+/g,"");
+    if (norm === target) return row[k] ?? "";
+  }
+  return "";
+}
 
 let DATA = [];
 
@@ -110,7 +133,7 @@ async function load() {
     const txt = await res.text();
     DATA = parseGviz(txt) || [];
 
-    const visibles = DATA.filter(r => (String(r.Estado || "").toLowerCase().trim() === "listo"));
+    const visibles = DATA.filter(r => (String(getField(r,"Estado") || "").toLowerCase().trim() === "listo"));
     const ms = Date.now() - t0;
     status.textContent = `Última actualización: ${new Date().toLocaleString()} · Filas totales: ${DATA.length} · Publicadas: ${visibles.length} · ${ms} ms`;
 
@@ -129,30 +152,26 @@ function render() {
   const sort = document.getElementById("sort").value;
 
   // Poblar categorías
-  const cats = [...new Set(DATA.map(r => (r.Categoria || "").trim()).filter(Boolean))].sort();
+  const cats = [...new Set(DATA.map(r => (getField(r,"Categoria") || "").trim()).filter(Boolean))].sort();
   const catEl = document.getElementById("cat");
   catEl.innerHTML = '<option value="">Todas</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join("");
 
   // Filtrar
-  let rows = DATA.filter(r => (String(r.Estado || "").toLowerCase().trim() === "listo"));
-  if (catSel) rows = rows.filter(r => (String(r.Categoria || "").toLowerCase().trim() === catSel.toLowerCase().trim()));
-  if (q) rows = rows.filter(r => `${r.Titulo || ""} ${r.Bullets || ""} ${r.Etiquetas || ""}`.toLowerCase().includes(q));
+  let rows = DATA.filter(r => (String(getField(r,"Estado") || "").toLowerCase().trim() === "listo"));
+  if (catSel) rows = rows.filter(r => (String(getField(r,"Categoria") || "").toLowerCase().trim() === catSel.toLowerCase().trim()));
+  if (q) rows = rows.filter(r => `${getField(r,"Titulo") || ""} ${getField(r,"Bullets") || ""} ${getField(r,"Etiquetas") || ""}`.toLowerCase().includes(q));
 
   // Orden por defecto: más recientes por FechaHora (desc)
   if (sort === "fecha-desc") {
-    rows.sort((a, b) => new Date(b.FechaHora || 0) - new Date(a.FechaHora || 0));
+    rows.sort((a, b) => new Date(getField(b,"FechaHora") || 0) - new Date(getField(a,"FechaHora") || 0));
   } else if (sort === "precio-asc") {
-    rows.sort((a, b) =>
-      (parseFloat(String(a.Precio_Ahora || "").replace(",", ".")) || 9e9) -
-      (parseFloat(String(b.Precio_Ahora || "").replace(",", ".")) || 9e9)
-    );
+    const toNum = v => (parseFloat(String(v || "").replace(",", ".")) || 9e9);
+    rows.sort((a, b) => toNum(getField(a,"Precio_Ahora")) - toNum(getField(b,"Precio_Ahora")));
   } else if (sort === "precio-desc") {
-    rows.sort((a, b) =>
-      (parseFloat(String(b.Precio_Ahora || "").replace(",", ".")) || -9e9) -
-      (parseFloat(String(a.Precio_Ahora || "").replace(",", ".")) || -9e9)
-    );
+    const toNum = v => (parseFloat(String(v || "").replace(",", ".")) || -9e9);
+    rows.sort((a, b) => toNum(getField(b,"Precio_Ahora")) - toNum(getField(a,"Precio_Ahora")));
   } else if (sort === "descuento-desc") {
-    const disc = r => pct(r.Precio_Antes, r.Precio_Ahora);
+    const disc = r => pct(getField(r,"Precio_Antes"), getField(r,"Precio_Ahora"));
     rows.sort((a, b) => (disc(b) ?? -999) - (disc(a) ?? -999));
   }
 
@@ -161,7 +180,15 @@ function render() {
   grid.innerHTML = "";
 
   rows.forEach(r => {
-    const p = pct(r.Precio_Antes, r.Precio_Ahora);
+    const titulo = getField(r,"Titulo") || "";
+    const bulletsTxt = getField(r,"Bullets") || "";
+    const imgUrl = cleanUrl(getField(r,"Imagen"));
+    const enlace = cleanUrl(getField(r,"Enlace"));   // ← ← el botón usará este enlace tal cual
+    const precioAntes = getField(r,"Precio_Antes");
+    const precioAhora = getField(r,"Precio_Ahora");
+    const categoria = getField(r,"Categoria") || "";
+    const etiquetas = getField(r,"Etiquetas") || "";
+    const p = pct(precioAntes, precioAhora);
 
     const card = document.createElement("div");
     card.className = "card";
@@ -169,8 +196,8 @@ function render() {
     // Imagen + fallback
     const img = new Image();
     img.className = "thumb";
-    img.alt = r.Titulo || "Producto";
-    img.src = r.Imagen || "";
+    img.alt = titulo || "Producto";
+    img.src = imgUrl || "";
     img.onerror = () => { img.src = FALLBACK_IMG; };
     card.appendChild(img);
 
@@ -179,11 +206,11 @@ function render() {
 
     const title = document.createElement("div");
     title.className = "title";
-    title.textContent = r.Titulo || "";
+    title.textContent = titulo;
 
     const bullets = document.createElement("div");
     bullets.className = "bullets";
-    const bulletList = (r.Bullets || "")
+    const bulletList = bulletsTxt
       .split(/;|\n|•/)
       .map(s => s.trim())
       .filter(Boolean)
@@ -193,16 +220,16 @@ function render() {
 
     const price = document.createElement("div");
     price.className = "price";
-    if (r.Precio_Antes) {
+    if (precioAntes) {
       const before = document.createElement("span");
       before.className = "before";
-      before.textContent = r.Precio_Antes;
+      before.textContent = precioAntes;
       price.appendChild(before);
     }
-    if (r.Precio_Ahora) {
+    if (precioAhora) {
       const now = document.createElement("span");
       now.className = "now";
-      now.innerHTML = r.Precio_Ahora + (p !== null ? ` <span style="color:#a7f3d0;font-weight:700">(-${p}%)</span>` : "");
+      now.innerHTML = precioAhora + (p !== null ? ` <span style="color:#a7f3d0;font-weight:700">(-${p}%)</span>` : "");
       price.appendChild(now);
     }
 
@@ -210,11 +237,11 @@ function render() {
     meta.className = "meta";
     const tag = document.createElement("span");
     tag.className = "tag";
-    tag.textContent = (r.Categoria || "").toUpperCase();
+    tag.textContent = (categoria || "").toUpperCase();
     const tags = document.createElement("span");
     tags.style.color = "#a9b0ba";
     tags.style.fontSize = "12px";
-    const tagList = (r.Etiquetas || "")
+    const tagList = (etiquetas || "")
       .split(/[#\s]+/)
       .filter(Boolean)
       .slice(0, 4)
@@ -231,17 +258,22 @@ function render() {
     content.appendChild(meta);
     card.appendChild(content);
 
-    // 🔘 ÚNICO BOTÓN: usa exactamente el link de la columna "Enlace"
-    const btnRow = document.createElement("div");
-    btnRow.style.cssText = "display:flex;gap:10px;align-items:center;padding:0 14px 14px";
-    const a1 = document.createElement("a");
-    a1.className = "cta";
-    a1.href = r.Enlace || "#";
-    a1.target = "_blank";
-    a1.rel = "sponsored nofollow noopener";
-    a1.textContent = "Ver oferta";
-    btnRow.appendChild(a1);
-    card.appendChild(btnRow);
+    // 🔘 ÚNICO BOTÓN (solo si hay enlace válido)
+    if (enlace) {
+      const btnRow = document.createElement("div");
+      btnRow.style.cssText = "display:flex;gap:10px;align-items:center;padding:0 14px 14px";
+      const a1 = document.createElement("a");
+      a1.className = "cta";
+      a1.href = enlace;               // ← tu enlace de la hoja tal cual
+      a1.target = "_blank";
+      a1.rel = "sponsored nofollow";
+      a1.textContent = "Ver oferta";
+      btnRow.appendChild(a1);
+      card.appendChild(btnRow);
+
+      // Log para depurar
+      console.log("[SportDeals] href botón:", a1.href);
+    }
 
     grid.appendChild(card);
   });
